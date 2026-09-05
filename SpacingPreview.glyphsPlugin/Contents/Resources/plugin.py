@@ -13,23 +13,6 @@ from AppKit import (
 )
 from Foundation import NSObject, NSNotificationCenter
 from GlyphsApp import Glyphs, UPDATEINTERFACE, EDIT_MENU, ONSTATE, OFFSTATE
-
-# Optional Glyphs document callbacks. They exist in current Glyphs API and make the
-# floating panel behave better when documents are activated/closed. Import them
-# defensively so the same plugin keeps loading across Glyphs 3/4 builds.
-try:
-    from GlyphsApp import DOCUMENTWILLCLOSE
-except Exception:
-    DOCUMENTWILLCLOSE = None
-try:
-    from GlyphsApp import DOCUMENTDIDCLOSE
-except Exception:
-    DOCUMENTDIDCLOSE = None
-try:
-    from GlyphsApp import DOCUMENTACTIVATED
-except Exception:
-    DOCUMENTACTIVATED = None
-
 from GlyphsApp.plugins import GeneralPlugin
 
 PLUGIN_ID = "com.pilstype.SpacingPreview"
@@ -345,13 +328,24 @@ class PilsSpacingPanelController(NSObject):
         self.kerningButton = None
         self.stringButton = None
         self._callback = None
-        self._glyphsCallbacks = []
         self._notificationsRegistered = False
+        self._active = False
         return self
 
     def open(self):
         if self.window is not None:
-            self._sync_visibility()
+            # Reopen an existing hidden window instead of creating/destroying Cocoa windows.
+            # Destroying the floating window on close can crash some Glyphs/PyObjC builds.
+            self._active = True
+            self.window.setDelegate_(self)
+            self._register_notifications()
+            if self._callback is None:
+                self._callback = self.update_
+                try:
+                    Glyphs.addCallback(self._callback, UPDATEINTERFACE)
+                except Exception:
+                    self._callback = None
+            self._sync_visibility(make_key=True)
             self.update_(None)
             return
 
@@ -367,7 +361,14 @@ class PilsSpacingPanelController(NSObject):
         )
         self.window.setTitle_("Spacing Preview")
         self.window.setLevel_(NSFloatingWindowLevel)
+        # Important: keep the Cocoa window retained by Python. Some Glyphs/PyObjC
+        # combinations can crash if the floating NSWindow is released on close.
+        try:
+            self.window.setReleasedWhenClosed_(False)
+        except Exception:
+            pass
         self.window.setDelegate_(self)
+        self._active = True
         self._register_notifications()
 
         content = self.window.contentView()
@@ -413,31 +414,28 @@ class PilsSpacingPanelController(NSObject):
 
         self._callback = self.update_
         Glyphs.addCallback(self._callback, UPDATEINTERFACE)
-
-        # Glyphs 3.0.4+ / Glyphs 4 document callbacks. These are more reliable
-        # than only observing NSWindow notifications when documents are closed or
-        # activated. Keep them optional for older/minor builds.
-        self._add_glyphs_callback(self.documentWillCloseCallback_, DOCUMENTWILLCLOSE)
-        self._add_glyphs_callback(self.documentDidCloseCallback_, DOCUMENTDIDCLOSE)
-        self._add_glyphs_callback(self.documentActivatedCallback_, DOCUMENTACTIVATED)
-
         self._sync_visibility(make_key=True)
         self.update_(None)
 
     def close(self):
+        """Disable the panel without destroying the NSWindow.
+
+        In Glyphs 3/4, closing and releasing a floating NSWindow from a Python
+        plugin can crash the host app. Treat close as a safe hide/disable action.
+        The window object is kept and reused when the menu item is triggered again.
+        """
+        self._active = False
         self._remove_callback()
         self._remove_notifications()
         if self.window is not None:
-            window = self.window
-            self.window = None
-            self.drawView = None
-            self.themeButton = None
-            self.kerningButton = None
-            self.stringButton = None
-            window.close()
+            try:
+                if self.window.isVisible():
+                    self.window.orderOut_(None)
+            except Exception:
+                pass
 
     def isOpen(self):
-        return self.window is not None
+        return bool(self._active and self.window is not None)
 
     def _string_button_title(self):
         if self.drawView is None:
@@ -447,27 +445,6 @@ class PilsSpacingPanelController(NSObject):
             index = 0
             self.drawView.stringIndex = 0
         return "String: %d" % (index + 1)
-
-    def _add_glyphs_callback(self, function, hook):
-        if hook is None:
-            return
-        try:
-            Glyphs.addCallback(function, hook)
-            self._glyphsCallbacks.append(function)
-        except Exception:
-            pass
-
-    def documentWillCloseCallback_(self, info):
-        if self.window is not None and self.window.isVisible():
-            self.window.orderOut_(None)
-
-    def documentDidCloseCallback_(self, info):
-        self._sync_visibility()
-        self.update_(None)
-
-    def documentActivatedCallback_(self, info):
-        self._sync_visibility()
-        self.update_(None)
 
     def _register_notifications(self):
         if self._notificationsRegistered:
@@ -535,7 +512,7 @@ class PilsSpacingPanelController(NSObject):
         return False
 
     def _sync_visibility(self, make_key=False):
-        if self.window is None:
+        if self.window is None or not self._active:
             return
         try:
             app_is_active = bool(NSApplication.sharedApplication().isActive())
@@ -561,7 +538,15 @@ class PilsSpacingPanelController(NSObject):
             self.window.orderOut_(None)
 
     def applicationWillTerminate_(self, notification):
-        self.close()
+        # Do not call NSWindow.close() during app termination. Just detach our hooks.
+        self._active = False
+        self._remove_callback()
+        self._remove_notifications()
+        try:
+            if self.window is not None and self.window.isVisible():
+                self.window.orderOut_(None)
+        except Exception:
+            pass
 
     def windowWillCloseNotification_(self, notification):
         try:
@@ -587,12 +572,6 @@ class PilsSpacingPanelController(NSObject):
             except Exception:
                 pass
             self._callback = None
-        for callback in list(self._glyphsCallbacks):
-            try:
-                Glyphs.removeCallback(callback)
-            except Exception:
-                pass
-        self._glyphsCallbacks = []
 
     def update_(self, sender):
         self._sync_visibility()
@@ -626,14 +605,18 @@ class PilsSpacingPanelController(NSObject):
             self.stringButton.setTitle_(self._string_button_title())
         self.drawView.setNeedsDisplay_(True)
 
+    def windowShouldClose_(self, sender):
+        # Red close button = disable/hide panel. Return False so AppKit does not
+        # actually destroy the NSWindow. This avoids Glyphs crashes on close.
+        self.close()
+        return False
+
     def windowWillClose_(self, notification):
+        # Only used during app shutdown or unusual OS-level close. Avoid touching
+        # Cocoa objects aggressively here.
+        self._active = False
         self._remove_callback()
         self._remove_notifications()
-        self.window = None
-        self.drawView = None
-        self.themeButton = None
-        self.kerningButton = None
-        self.stringButton = None
 
 
 class PilsSpacingFloatingPanel(GeneralPlugin):
