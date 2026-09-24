@@ -4,14 +4,17 @@ A compact spacing and kerning preview plugin for **Glyphs 3 and Glyphs 4**.
 
 Spacing Preview opens a small floating panel that shows the currently selected glyph inside useful spacing strings, so you can check sidebearings and kerning without leaving the Edit view.
 
-![Spacing Preview](<images/Spacing Preview Plugin.png>)
+![Spacing Preview](images/spacing-preview.png)
+
 ## Features
 
 - Live preview of the currently selected glyph
-- Five spacing strings for lowercase and uppercase testing
+- Six spacing strings for lowercase and uppercase testing
+- Stylistic sets and other suffix-based alternates follow the features active in the Edit view
 - Kerning on/off toggle
-- Black/white preview theme
+- Dark and light low-contrast themes (dark by default)
 - Quick switching between spacing strings
+- Opens in the top-left corner of the Edit view
 - Automatically follows the active Glyphs Edit view
 - Hides when no Edit tab is active
 - Compatible with Glyphs 3 and Glyphs 4
@@ -26,8 +29,12 @@ nnxnoxoo
 HHxHOxOO
 nnnxnnn
 HHHxHHH
-HHxhnxnn
+HHxHnxnn
 ```
+
+## Stylistic sets
+
+When a feature such as `ss01` is switched on in the Edit view, the spacing glyphs are replaced by their alternates using the usual Glyphs naming (`n` → `n.ss01`, with several sets `n.ss01.ss03`). This works for stylistic sets, `salt`, `cv01` and similar features whose alternates use suffix naming. Contextual substitutions defined only in feature code are not applied.
 
 ## Installation
 
@@ -40,6 +47,10 @@ HHxhnxnn
 
 > For installation, use the packaged release ZIP rather than GitHub's automatically generated “Source code” archives.
 
+### Updating from 1.0
+
+Install the new release the same way. Glyphs replaces the old version; restart Glyphs afterwards.
+
 ## Compatibility
 
 - Glyphs 3
@@ -47,7 +58,7 @@ HHxhnxnn
 
 ## Version
 
-Current release: **1.0.0**
+Current release: **1.1.0** — see [CHANGELOG](CHANGELOG.md).
 
 ## License
 
