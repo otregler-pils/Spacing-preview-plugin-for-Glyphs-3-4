@@ -4,7 +4,7 @@ A compact spacing and kerning preview plugin for **Glyphs 3 and Glyphs 4**.
 
 Spacing Preview opens a small floating panel that shows the currently selected glyph inside useful spacing strings, so you can check sidebearings and kerning without leaving the Edit view.
 
-![Spacing Preview](images/Spacing-Preview-Plugin.png)
+![Spacing Preview](images/Spacing Preview Plugin.png)
 
 ## Features
 
