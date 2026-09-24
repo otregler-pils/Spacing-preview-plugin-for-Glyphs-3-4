@@ -26,6 +26,7 @@ nnxnoxoo
 HHxHOxOO
 nnnxnnn
 HHHxHHH
+HHxhnxnn
 ```
 
 ## Installation
